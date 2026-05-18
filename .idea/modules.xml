@@ -3,6 +3,7 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/ssh-vend-local.iml" filepath="$PROJECT_DIR$/.idea/ssh-vend-local.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../ssh-vend-local.wiki/.idea/ssh-vend-local.wiki.iml" filepath="$PROJECT_DIR$/../ssh-vend-local.wiki/.idea/ssh-vend-local.wiki.iml" />
     </modules>
   </component>
 </project>
