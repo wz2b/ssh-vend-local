@@ -1,0 +1,100 @@
+version: '3'
+
+vars:
+  BIN_DIR: ./bin
+
+  MAIN_BIN: ./bin/ssh-vend-local
+  MAIN_PKG: ./cmd/ssh-vend-local
+
+  SIGNER_BIN: ./bin/ssh-vend-local-signer
+  SIGNER_PKG: ./cmd/ssh-vend-local-signer
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  tidy:
+    desc: Tidy Go modules
+    cmds:
+      - go mod tidy
+
+  fmt:
+    desc: Format Go code
+    cmds:
+      - gofmt -w ./cmd ./internal
+
+  build:
+    desc: Build all binaries
+    deps:
+      - build:main
+      - build:signer
+
+  build:main:
+    desc: Build ssh-vend-local
+    deps: [fmt]
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - go build -o {{.MAIN_BIN}} {{.MAIN_PKG}}
+
+  build:signer:
+    desc: Build ssh-vend-local-signer
+    deps: [fmt]
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - go build -o {{.SIGNER_BIN}} {{.SIGNER_PKG}}
+
+  test:
+    desc: Run Go tests
+    cmds:
+      - go test ./...
+
+  check:
+    desc: Format, build, and test
+    deps:
+      - fmt
+      - build
+      - test
+
+  run:
+    desc: "Run ssh-vend-local. Example: task run -- doctor"
+    deps: [build:main]
+    cmds:
+      - '{{.MAIN_BIN}} {{.CLI_ARGS}}'
+
+  run:signer:
+    desc: "Run ssh-vend-local-signer. Example: task run:signer -- --help"
+    deps: [build:signer]
+    cmds:
+      - '{{.SIGNER_BIN}} {{.CLI_ARGS}}'
+
+  doctor:
+    desc: Run local tool checks
+    deps: [build:main]
+    cmds:
+      - '{{.MAIN_BIN}} doctor'
+
+  init-ca:
+    desc: Initialize a local demo SSH CA
+    deps: [build:main]
+    cmds:
+      - '{{.MAIN_BIN}} init-ca --dir ./local/ca'
+
+  print-server-config:
+    desc: Print server-side sshd trust configuration
+    deps: [build:main]
+    cmds:
+      - '{{.MAIN_BIN}} print-server-config --ca-pub ./local/ca/user_ca.pub --principal semaphore-dev --login-user ansible'
+
+  install:
+    desc: Install binaries to /usr/local/bin and /usr/local/libexec
+    deps: [build]
+    cmds:
+      - sudo install -o root -g root -m 0755 {{.MAIN_BIN}} /usr/local/bin/ssh-vend-local
+      - sudo install -o root -g root -m 0755 {{.SIGNER_BIN}} /usr/local/libexec/ssh-vend-local-signer
+
+  clean:
+    desc: Remove build and local generated files
+    cmds:
+      - rm -rf ./bin ./local
