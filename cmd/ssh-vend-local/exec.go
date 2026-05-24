@@ -33,9 +33,12 @@ func cmdExec(args []string) error {
 		return fmt.Errorf("generate ephemeral keypair: %w", err)
 	}
 
+	principal, _ := fs.GetString("principal")
+
 	certLine, err := SignEphemeralKey(SignEphemeralKeyRequest{
 		SignerCommand:       cfg.SignerCommand,
 		PublicAuthorizedKey: keyPair.PubAuth,
+		Principal:           principal,
 		Profile:             cfg.Profile,
 		RequestedTTL:        cfg.TTL,
 		Identity:            cfg.Identity,
@@ -80,6 +83,7 @@ func registerCommonFlags(fs *pflag.FlagSet) {
 	fs.String("profile", "", "Signer profile to request. Default is default")
 	fs.String("ttl", "", "Requested certificate lifetime. Default is 15m")
 	fs.String("identity", "", "Requested certificate identity / key ID")
+	fs.String("principal", "", "Requested SSH certificate principal. Default is current OS user")
 	fs.StringArray("signer-command", nil, "External signer command. Repeat for each argv element.")
 	fs.String("runtime-dir", "", "Runtime directory. Default is temporary")
 }

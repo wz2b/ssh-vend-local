@@ -53,14 +53,26 @@ type SignEphemeralKeyRequest struct {
 	// rewrite, sanitize, or ignore it according to policy.
 	Identity string
 
+	// Principal is the requested SSH user certificate principal.
+	//
+	// For ordinary OpenSSH user-certificate login, this normally matches the
+	// remote login account name, for example "chrisp" when connecting as
+	// chrisp@host.
+	//
+	// This is authorization-relevant. The signer must validate the requested
+	// principal against the selected profile and caller policy. The caller may
+	// request a principal, but the privileged signer decides whether to allow it.
+	Principal string
+
 	Verbose bool
 }
 
 type externalSignRequest struct {
 	PublicKey    string `json:"public_key"`
-	Profile      string `json:"profile"`
+	SigningKey   string `json:"signing_key"`
 	RequestedTTL string `json:"requested_ttl,omitempty"`
 	Identity     string `json:"identity,omitempty"`
+	Principal    string `json:"principal"`
 }
 
 // SignEphemeralKey asks an external signer process to sign an ephemeral public key.
@@ -98,9 +110,10 @@ func SignEphemeralKey(req SignEphemeralKeyRequest) (string, error) {
 
 	payload := externalSignRequest{
 		PublicKey:    req.PublicAuthorizedKey,
-		Profile:      req.Profile,
 		RequestedTTL: req.RequestedTTL,
 		Identity:     req.Identity,
+		Principal:    req.Principal,
+		SigningKey:   req.Profile,
 	}
 
 	payloadBytes, err := json.Marshal(payload)

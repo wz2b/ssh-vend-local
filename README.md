@@ -172,6 +172,36 @@ read private signing keys.
 
 Use a narrow command rule that allows only the signer helper binary.
 
+## NTP and Clock Risk
+
+SSH user certificates are time-bounded credentials. Their security depends on reasonably accurate clocks on both the
+signer and the target SSH servers.
+
+`ssh-vend-local-signer` issues certificates with a validity window derived from the signer host's current time and the
+requested TTL. The target SSH server then validates that the certificate is currently within that validity window.
+
+This creates an operational security dependency:
+
+- If the signer clock is wrong, it may issue certificates with incorrect validity windows.
+- If a target server clock is moved backward, an expired certificate may appear valid again.
+- If a target server clock is moved forward, valid certificates may be rejected early.
+- If time synchronization is disrupted, short-lived certificates may fail unpredictably.
+
+For development and lab testing this may be acceptable, but production deployments should treat time synchronization as
+part of the security boundary.
+
+Recommended mitigations:
+
+- Run reliable time synchronization on signer hosts and target SSH servers.
+- Prefer authenticated time synchronization where available, such as NTS-capable NTP or a trusted internal time source.
+- Monitor clock synchronization and clock offset.
+- Alert when signer or target hosts drift beyond an acceptable threshold.
+- Consider refusing to sign certificates when the signer host is not time synchronized.
+- Keep certificate TTLs short enough to reduce replay value, but long enough to tolerate small clock skew.
+
+The signer should never treat caller-requested TTL as authority. TTL must always be clamped by
+`/etc/ssh-vend-local/profiles`.
+
 ## Configuration Filesystem Layout
 
 ```terminaloutput
@@ -184,11 +214,11 @@ Use a narrow command rule that allows only the signer helper binary.
 ```
 
 * /etc/ssh-vend-local/profiles
-  * root-controlled policy file
+    * root-controlled policy file
 * /etc/ssh-vend-local/keys/
-  * CA private keys and matching public keys
+    * CA private keys and matching public keys
 * /etc/ssh-vend-local/certs/
-  * optional operational storage for issued certs
+    * optional operational storage for issued certs
 
 The signer does not allow the caller to supply arbitrary key paths.
 
@@ -213,16 +243,15 @@ Examples:
 This means:
 
 * UID 1000 may request:
-  * principals: ansadmin, deploy
-  * signing keys: default, lab
-  * maximum TTL: 3600 seconds
+    * principals: ansadmin, deploy
+    * signing keys: default, lab
+    * maximum TTL: 3600 seconds
 * UID 995 may request:
-  * principals: ansadmin
-  * signing keys: default
-  * maximum TTL: 900 seconds
+    * principals: ansadmin
+    * signing keys: default
+    * maximum TTL: 900 seconds
 
 Policy Rules:
-
 
 * blank lines are ignored
 * lines beginning with # are ignored
@@ -230,12 +259,13 @@ Policy Rules:
 * matching is exact after whitespace trimming
 * malformed lines are errors
 * a request is allowed only if one policy line matches:
-  * caller UID
-  * requested principal
-  * requested signing key
-  * requested TTL less than or equal to max TTL
+    * caller UID
+    * requested principal
+    * requested signing key
+    * requested TTL less than or equal to max TTL
 
 ## Building
+
 This project uses Go and includes a Taskfile.yml.
 
 Requirements:
@@ -246,6 +276,7 @@ Requirements:
 * sudo
 
 Commands:
+
 ```terminaloutput
 task build
 task build:main
