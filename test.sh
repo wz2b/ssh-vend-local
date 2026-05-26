@@ -10,7 +10,7 @@ ssh-keygen -t ed25519 \
 
 pubkey="$(cat ./test_key.pub)"
 
-cat <<JSON | sudo -n -u ssh-vend-signer /usr/local/bin/ssh-vend-local-signer > ./test_key-cert.pub
+cat <<JSON | sudo -n -u ssh-vend-signer /usr/local/libexec/ssh-vend-local-signer > ./test_key-cert.pub
 {
   "public_key": "$pubkey",
   "principal": "ansadmin",

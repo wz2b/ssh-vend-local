@@ -1,4 +1,4 @@
-package main
+package signerprocess
 
 import (
 	"bytes"
@@ -12,95 +12,46 @@ import (
 	"time"
 )
 
-const defaultSignerTimeout = 15 * time.Second
+const defaultTimeout = 15 * time.Second
 
-type SignEphemeralKeyRequest struct {
-	// SignerCommand is the external signer command and arguments.
-	//
-	// Example:
-	//
-	//	[]string{
-	//	    "sudo",
-	//	    "-n",
-	//	    "-u",
-	//	    "ssh-vend-signer",
-	//	    "/usr/local/libexec/ssh-vend-local-signer",
-	//	}
-	//
-	// The signer receives JSON on stdin and must write the OpenSSH certificate
-	// authorized-key line on stdout.
-	SignerCommand []string
-
-	// PublicAuthorizedKey is the ephemeral public key in authorized_keys format.
-	//
-	// Example:
-	//
-	//	ssh-ed25519 AAAAC3...
+type Request struct {
+	SignerCommand       []string
 	PublicAuthorizedKey string
-
-	// Profile is the signer-owned policy profile being requested.
-	//
-	// The unprivileged caller requests a profile. The privileged signer decides
-	// what that profile means: signing key, principals, max TTL, extensions,
-	// critical options, source-address restrictions, etc.
-	Profile string
-
-	// RequestedTTL is a request, not authority. The signer should clamp this to
-	// the profile's maximum TTL.
-	RequestedTTL string
-
-	// Identity is used as the certificate key ID/comment. The signer may accept,
-	// rewrite, sanitize, or ignore it according to policy.
-	Identity string
-
-	Verbose bool
+	Profile             string
+	RequestedTTL        string
+	Identity            string
+	Principal           string
+	Verbose             bool
 }
 
-type externalSignRequest struct {
+type externalRequest struct {
 	PublicKey    string `json:"public_key"`
-	Profile      string `json:"profile"`
+	SigningKey   string `json:"signing_key"`
 	RequestedTTL string `json:"requested_ttl,omitempty"`
 	Identity     string `json:"identity,omitempty"`
+	Principal    string `json:"principal"`
 }
 
-// SignEphemeralKey asks an external signer process to sign an ephemeral public key.
-//
-// This function does not read the CA private key. The CA key is owned by the
-// external signer process, usually launched through sudo as a dedicated signer
-// user.
-//
-// Contract:
-//
-//	stdin:  JSON externalSignRequest
-//	stdout: one OpenSSH certificate authorized-key line
-//	stderr: diagnostics only
-//
-// The returned string is suitable for writing to:
-//
-//	id_ed25519-cert.pub
-//	id_rsa-cert.pub
-func SignEphemeralKey(req SignEphemeralKeyRequest) (string, error) {
+func Sign(req Request) (string, error) {
 	if len(req.SignerCommand) == 0 {
 		return "", errors.New("signer command is required")
 	}
-
 	if strings.TrimSpace(req.SignerCommand[0]) == "" {
 		return "", errors.New("signer command executable is required")
 	}
-
 	if strings.TrimSpace(req.PublicAuthorizedKey) == "" {
 		return "", errors.New("public authorized key is required")
 	}
-
 	if strings.TrimSpace(req.Profile) == "" {
 		return "", errors.New("profile is required")
 	}
 
-	payload := externalSignRequest{
+	payload := externalRequest{
 		PublicKey:    req.PublicAuthorizedKey,
-		Profile:      req.Profile,
 		RequestedTTL: req.RequestedTTL,
 		Identity:     req.Identity,
+		Principal:    req.Principal,
+		SigningKey:   req.Profile,
 	}
 
 	payloadBytes, err := json.Marshal(payload)
@@ -108,7 +59,7 @@ func SignEphemeralKey(req SignEphemeralKeyRequest) (string, error) {
 		return "", fmt.Errorf("marshal signing request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), defaultSignerTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, req.SignerCommand[0], req.SignerCommand[1:]...)
@@ -116,7 +67,6 @@ func SignEphemeralKey(req SignEphemeralKeyRequest) (string, error) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
@@ -127,14 +77,12 @@ func SignEphemeralKey(req SignEphemeralKeyRequest) (string, error) {
 
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
-			return "", fmt.Errorf("signer timed out after %s: %w", defaultSignerTimeout, ctx.Err())
+			return "", fmt.Errorf("signer timed out after %s: %w", defaultTimeout, ctx.Err())
 		}
-
 		errText := strings.TrimSpace(stderr.String())
 		if errText != "" {
 			return "", fmt.Errorf("signer failed: %w: %s", err, errText)
 		}
-
 		return "", fmt.Errorf("signer failed: %w", err)
 	}
 
@@ -144,10 +92,8 @@ func SignEphemeralKey(req SignEphemeralKeyRequest) (string, error) {
 		if errText != "" {
 			return "", fmt.Errorf("signer returned empty certificate; stderr: %s", errText)
 		}
-
 		return "", errors.New("signer returned empty certificate")
 	}
-
 	if !strings.HasPrefix(certLine, "ssh-") {
 		return "", fmt.Errorf("signer returned invalid-looking SSH certificate line: %q", certLine)
 	}

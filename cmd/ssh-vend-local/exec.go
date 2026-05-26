@@ -1,77 +1,61 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 
 	"github.com/spf13/pflag"
-	"golang.org/x/crypto/ssh"
+	"github.com/wz2b/ssh-vend-local/internal/sshvend/agentruntime"
+	sshutil "github.com/wz2b/ssh-vend-local/internal/sshvend/util"
 )
 
 func cmdExec(args []string) error {
 	before, command := splitCommand(args)
 
-	fs := pflag.NewFlagSet("exec", pflag.ContinueOnError)
+	fs := sshutil.NewSubcommandFlagSet("exec", nil)
 	registerCommonFlags(fs)
 
-	if err := fs.Parse(before); err != nil {
+	if err := sshutil.ParseSubcommandArgs(fs, before, false); err != nil {
 		return err
 	}
 
-	if len(command) == 0 {
-		return errors.New("exec: missing COMMAND (use: exec [flags] -- COMMAND ...)")
+	if err := sshutil.RequireArgCheck("command", func() bool {
+		return len(command) > 0
+	}, "command to execute is required (use: exec [flags] -- COMMAND ...)"); err != nil {
+		return fmt.Errorf("exec: %w", err)
 	}
 
-	cfg, err := LoadConfig(fs)
+	cfg, err := sshutil.LoadSubcommandConfig(fs)
 	if err != nil {
 		return err
 	}
 
-	keyPair, err := genEphemeralKeypair(cfg.KeyType)
-	if err != nil {
-		return fmt.Errorf("generate ephemeral keypair: %w", err)
+	principal, _ := fs.GetString("principal")
+	if err := sshutil.RequireArg("principal", principal); err != nil {
+		return fmt.Errorf("exec: %w", err)
 	}
 
-	certLine, err := SignEphemeralKey(SignEphemeralKeyRequest{
-		SignerCommand:       cfg.SignerCommand,
-		PublicAuthorizedKey: keyPair.PubAuth,
-		Profile:             cfg.Profile,
-		RequestedTTL:        cfg.TTL,
-		Identity:            cfg.Identity,
-		Verbose:             cfg.Verbose,
+	lifetimeSecs, err := sshutil.LifetimeSeconds(cfg.TTL)
+	if err != nil {
+		return err
+	}
+
+	runtime, err := agentruntime.Build(agentruntime.RuntimeArgs{
+		SignerCommand: cfg.SignerCommand,
+		KeyType:       cfg.KeyType,
+		Profile:       cfg.Profile,
+		Principal:     principal,
+		RequestedTTL:  cfg.TTL,
+		Identity:      cfg.Identity,
+		TTLSeconds:    lifetimeSecs,
+		Verbose:       cfg.Verbose,
 	})
-	if err != nil {
-		return fmt.Errorf("sign ephemeral key: %w", err)
-	}
-
-	cert, err := parseCertificateLine(certLine)
-	if err != nil {
-		return fmt.Errorf("parse signed certificate: %w", err)
-	}
-
-	privateKey, err := ssh.ParseRawPrivateKey(keyPair.PrivPEM)
-	if err != nil {
-		return fmt.Errorf("parse ephemeral private key: %w", err)
-	}
-
-	lifetimeSecs, err := lifetimeSeconds(cfg.TTL)
-	if err != nil {
-		return err
-	}
-
-	runtime, err := StartEphemeralAgent(EphemeralAgentKey{
-		PrivateKey:   privateKey,
-		Certificate:  cert,
-		Comment:      cfg.Identity,
-		LifetimeSecs: lifetimeSecs,
-	}, cfg.Verbose)
 	if err != nil {
 		return fmt.Errorf("start ephemeral SSH agent: %w", err)
 	}
 	defer runtime.Close()
 
-	return RunCommandWithAgent(command, runtime.SocketPath)
+	return sshutil.RunCommandWithAgent(command, runtime.SocketPath)
 }
 
 func registerCommonFlags(fs *pflag.FlagSet) {
@@ -80,6 +64,7 @@ func registerCommonFlags(fs *pflag.FlagSet) {
 	fs.String("profile", "", "Signer profile to request. Default is default")
 	fs.String("ttl", "", "Requested certificate lifetime. Default is 15m")
 	fs.String("identity", "", "Requested certificate identity / key ID")
+	fs.String("principal", "", "Requested SSH certificate principal. Default is current OS user")
 	fs.StringArray("signer-command", nil, "External signer command. Repeat for each argv element.")
 	fs.String("runtime-dir", "", "Runtime directory. Default is temporary")
 }
