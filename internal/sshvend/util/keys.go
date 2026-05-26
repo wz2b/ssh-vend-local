@@ -1,4 +1,4 @@
-package main
+package util
 
 import (
 	"bytes"
@@ -17,24 +17,20 @@ type EphemeralKeyPair struct {
 	Type    string
 }
 
-func genEphemeralKeypair(keyType string) (*EphemeralKeyPair, error) {
+func GenEphemeralKeypair(keyType string) (*EphemeralKeyPair, error) {
 	switch keyType {
 	case "ed25519", "":
 		_, priv, err := ed25519.GenerateKey(rand.Reader)
 		if err != nil {
 			return nil, fmt.Errorf("generate ed25519 key: %w", err)
 		}
-
 		return marshalEphemeralKey(priv, "ed25519")
-
 	case "rsa":
 		priv, err := rsa.GenerateKey(rand.Reader, 3072)
 		if err != nil {
 			return nil, fmt.Errorf("generate rsa key: %w", err)
 		}
-
 		return marshalEphemeralKey(priv, "rsa")
-
 	default:
 		return nil, fmt.Errorf("unsupported key type %q", keyType)
 	}
@@ -58,9 +54,5 @@ func marshalEphemeralKey(privateKey any, keyType string) (*EphemeralKeyPair, err
 		return nil, fmt.Errorf("encode private key PEM: %w", err)
 	}
 
-	return &EphemeralKeyPair{
-		PrivPEM: buf.Bytes(),
-		PubAuth: pubAuth,
-		Type:    keyType,
-	}, nil
+	return &EphemeralKeyPair{PrivPEM: buf.Bytes(), PubAuth: pubAuth, Type: keyType}, nil
 }

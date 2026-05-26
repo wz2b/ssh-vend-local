@@ -1,4 +1,4 @@
-package main
+package util
 
 import (
 	"fmt"
@@ -9,18 +9,10 @@ import (
 )
 
 // RunCommandWithAgent runs command with SSH_AUTH_SOCK set to socketPath.
-//
-// This is intentionally separate from cmdExec so cmdExec only has to deal with
-// argument parsing, config loading, and high-level lifecycle:
-//
-//	start ephemeral agent
-//	run command with agent
-//	close ephemeral agent
 func RunCommandWithAgent(command []string, socketPath string) error {
 	if len(command) == 0 {
 		return fmt.Errorf("missing command")
 	}
-
 	if socketPath == "" {
 		return fmt.Errorf("missing SSH agent socket path")
 	}
@@ -40,10 +32,7 @@ func RunCommandWithAgent(command []string, socketPath string) error {
 	defer signal.Stop(sigc)
 
 	done := make(chan error, 1)
-
-	go func() {
-		done <- child.Wait()
-	}()
+	go func() { done <- child.Wait() }()
 
 	for {
 		select {

@@ -1,4 +1,4 @@
-package main
+package util
 
 import (
 	"errors"
@@ -8,7 +8,7 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-func parseCertificateLine(certLine string) (*ssh.Certificate, error) {
+func ParseCertificateLine(certLine string) (*ssh.Certificate, error) {
 	pubKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(certLine))
 	if err != nil {
 		return nil, fmt.Errorf("parse authorized key line: %w", err)
@@ -26,7 +26,7 @@ func parseCertificateLine(certLine string) (*ssh.Certificate, error) {
 	return cert, nil
 }
 
-func lifetimeSeconds(ttl string) (uint32, error) {
+func LifetimeSeconds(ttl string) (uint32, error) {
 	if ttl == "" {
 		return 0, nil
 	}

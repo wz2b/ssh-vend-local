@@ -15,17 +15,35 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wz2b/ssh-vend-local/internal/sshvend/agentproto"
+	"github.com/wz2b/ssh-vend-local/internal/sshvend/agentruntime"
+	"github.com/wz2b/ssh-vend-local/internal/sshvend/semaphoreagent"
 	"golang.org/x/crypto/ssh"
 	sshagent "golang.org/x/crypto/ssh/agent"
 )
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
+type agentRequest = agentproto.Request
+type agentResponse = agentproto.Response
+
+func readAgentRequest(r *bufio.Reader) (*agentRequest, error) {
+	return agentproto.ReadRequest(r)
+}
+
+func readAgentResponse(r *bufio.Reader) (*agentResponse, error) {
+	return agentproto.ReadResponse(r)
+}
+
+func writeAgentResponse(w io.Writer, resp agentResponse) error {
+	return agentproto.WriteResponse(w, resp)
+}
+
 func installSignerStub(t *testing.T, fn func(SignEphemeralKeyRequest) (string, error)) {
 	t.Helper()
-	old := signEphemeralKeyFunc
-	signEphemeralKeyFunc = fn
-	t.Cleanup(func() { signEphemeralKeyFunc = old })
+	old := agentruntime.SignFunc
+	agentruntime.SignFunc = fn
+	t.Cleanup(func() { agentruntime.SignFunc = old })
 }
 
 func makeSignerSuccessStub(t *testing.T, capture *SignEphemeralKeyRequest) func(SignEphemeralKeyRequest) (string, error) {
@@ -594,21 +612,21 @@ func TestParseJSONConfig(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		body    string
-		want    agentJSONConfig
+		want    semaphoreagent.JSONConfig
 		wantErr bool
 	}{
-		{"empty body", "", agentJSONConfig{}, false},
-		{"whitespace only", "   \n  ", agentJSONConfig{}, false},
-		{"empty object", "{}", agentJSONConfig{}, false},
+		{"empty body", "", semaphoreagent.JSONConfig{}, false},
+		{"whitespace only", "   \n  ", semaphoreagent.JSONConfig{}, false},
+		{"empty object", "{}", semaphoreagent.JSONConfig{}, false},
 		{"all fields", `{"profile":"p","principal":"u","ttl":"1h"}`,
-			agentJSONConfig{Profile: "p", Principal: "u", TTL: "1h"}, false},
+			semaphoreagent.JSONConfig{Profile: "p", Principal: "u", TTL: "1h"}, false},
 		{"partial fields", `{"principal":"ansible"}`,
-			agentJSONConfig{Principal: "ansible"}, false},
-		{"invalid json", "not-json", agentJSONConfig{}, true},
-		{"ca_key rejected", `{"ca_key":"/tmp/key"}`, agentJSONConfig{}, true},
+			semaphoreagent.JSONConfig{Principal: "ansible"}, false},
+		{"invalid json", "not-json", semaphoreagent.JSONConfig{}, true},
+		{"ca_key rejected", `{"ca_key":"/tmp/key"}`, semaphoreagent.JSONConfig{}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := parseJSONConfig([]byte(tc.body))
+			got, err := semaphoreagent.ParseJSONConfig([]byte(tc.body))
 			if tc.wantErr {
 				if err == nil {
 					t.Fatal("expected error, got nil")
@@ -848,16 +866,16 @@ func TestBuildSemaphoreRuntime_StaleSocketReplaced(t *testing.T) {
 		t.Fatalf("stale socket not present before test: %v", err)
 	}
 
-	rt, err := buildSemaphoreRuntime(semaphoreRuntimeArgs{
-		signerCommand: []string{"stub-signer"},
-		keyType:       "ed25519",
-		profile:       "default",
-		principal:     "test",
-		requestedTTL:  "15m",
-		identity:      "test-stale-replace",
-		runtimeDir:    runtimeDir,
-		ttlSecs:       900,
-		logw:          io.Discard,
+	rt, err := agentruntime.Build(agentruntime.RuntimeArgs{
+		SignerCommand: []string{"stub-signer"},
+		KeyType:       "ed25519",
+		Profile:       "default",
+		Principal:     "test",
+		RequestedTTL:  "15m",
+		Identity:      "test-stale-replace",
+		RuntimeDir:    runtimeDir,
+		TTLSeconds:    900,
+		Logw:          io.Discard,
 	})
 	if err != nil {
 		t.Fatalf("buildSemaphoreRuntime should succeed with stale socket: %v", err)
@@ -875,16 +893,16 @@ func TestBuildSemaphoreRuntime_NonSocketFileIsError(t *testing.T) {
 		t.Fatalf("write fake file: %v", err)
 	}
 
-	_, err := buildSemaphoreRuntime(semaphoreRuntimeArgs{
-		signerCommand: []string{"stub-signer"},
-		keyType:       "ed25519",
-		profile:       "default",
-		principal:     "test",
-		requestedTTL:  "15m",
-		identity:      "test-non-socket",
-		runtimeDir:    runtimeDir,
-		ttlSecs:       900,
-		logw:          io.Discard,
+	_, err := agentruntime.Build(agentruntime.RuntimeArgs{
+		SignerCommand: []string{"stub-signer"},
+		KeyType:       "ed25519",
+		Profile:       "default",
+		Principal:     "test",
+		RequestedTTL:  "15m",
+		Identity:      "test-non-socket",
+		RuntimeDir:    runtimeDir,
+		TTLSeconds:    900,
+		Logw:          io.Discard,
 	})
 	if err == nil {
 		t.Fatal("expected error when non-socket file exists at socket path")
