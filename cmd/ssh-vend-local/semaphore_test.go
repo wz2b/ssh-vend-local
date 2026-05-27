@@ -18,6 +18,7 @@ import (
 	"github.com/wz2b/ssh-vend-local/internal/sshvend/agentproto"
 	"github.com/wz2b/ssh-vend-local/internal/sshvend/agentruntime"
 	"github.com/wz2b/ssh-vend-local/internal/sshvend/semaphoreagent"
+	sp "github.com/wz2b/ssh-vend-local/internal/sshvend/signerprocess"
 	"golang.org/x/crypto/ssh"
 	sshagent "golang.org/x/crypto/ssh/agent"
 )
@@ -39,14 +40,14 @@ func writeAgentResponse(w io.Writer, resp agentResponse) error {
 	return agentproto.WriteResponse(w, resp)
 }
 
-func installSignerStub(t *testing.T, fn func(SignEphemeralKeyRequest) (string, error)) {
+func installSignerStub(t *testing.T, fn func(sp.Request) (string, error)) {
 	t.Helper()
 	old := agentruntime.SignFunc
 	agentruntime.SignFunc = fn
 	t.Cleanup(func() { agentruntime.SignFunc = old })
 }
 
-func makeSignerSuccessStub(t *testing.T, capture *SignEphemeralKeyRequest) func(SignEphemeralKeyRequest) (string, error) {
+func makeSignerSuccessStub(t *testing.T, capture *sp.Request) func(sp.Request) (string, error) {
 	t.Helper()
 
 	_, caPriv, err := ed25519.GenerateKey(rand.Reader)
@@ -58,7 +59,7 @@ func makeSignerSuccessStub(t *testing.T, capture *SignEphemeralKeyRequest) func(
 		t.Fatalf("create CA signer: %v", err)
 	}
 
-	return func(req SignEphemeralKeyRequest) (string, error) {
+	return func(req sp.Request) (string, error) {
 		if capture != nil {
 			*capture = req
 		}
@@ -435,7 +436,7 @@ func verifyOnlyAgentResponses(t *testing.T, data []byte) {
 // a non-200 AGENT/1 RESPONSE on stdout and a non-nil error return.
 func TestSemaphoreAgentBadProfile(t *testing.T) {
 	fallback := makeSignerSuccessStub(t, nil)
-	installSignerStub(t, func(req SignEphemeralKeyRequest) (string, error) {
+	installSignerStub(t, func(req sp.Request) (string, error) {
 		if req.Profile == "nonexistent-profile-xyz" {
 			return "", fmt.Errorf("unknown profile %q", req.Profile)
 		}
@@ -679,7 +680,7 @@ func runAgentOneShot(t *testing.T, agentArgs []string, configBody []byte) *agent
 }
 
 func TestJSONConfigOverlay_PrincipalFromJSON(t *testing.T) {
-	var captured SignEphemeralKeyRequest
+	var captured sp.Request
 	installSignerStub(t, makeSignerSuccessStub(t, &captured))
 	runtimeDir := t.TempDir()
 
@@ -698,7 +699,7 @@ func TestJSONConfigOverlay_PrincipalFromJSON(t *testing.T) {
 
 func TestJSONConfigOverlay_ProfileFromJSON(t *testing.T) {
 	testProfile := "test-profile-" + t.Name()
-	var captured SignEphemeralKeyRequest
+	var captured sp.Request
 	installSignerStub(t, makeSignerSuccessStub(t, &captured))
 	runtimeDir := t.TempDir()
 
@@ -730,7 +731,7 @@ func TestJSONConfigOverlay_JSONCAKeyIsRejected(t *testing.T) {
 }
 
 func TestJSONConfigOverlay_TTLFromJSON(t *testing.T) {
-	var captured SignEphemeralKeyRequest
+	var captured sp.Request
 	installSignerStub(t, makeSignerSuccessStub(t, &captured))
 	runtimeDir := t.TempDir()
 
@@ -747,7 +748,7 @@ func TestJSONConfigOverlay_TTLFromJSON(t *testing.T) {
 }
 
 func TestJSONConfigOverlay_CLIOverridesJSONPrincipal(t *testing.T) {
-	var captured SignEphemeralKeyRequest
+	var captured sp.Request
 	installSignerStub(t, makeSignerSuccessStub(t, &captured))
 	runtimeDir := t.TempDir()
 
@@ -768,7 +769,7 @@ func TestJSONConfigOverlay_CLIOverridesJSONPrincipal(t *testing.T) {
 }
 
 func TestJSONConfigOverlay_CLIOverridesJSONTTL(t *testing.T) {
-	var captured SignEphemeralKeyRequest
+	var captured sp.Request
 	installSignerStub(t, makeSignerSuccessStub(t, &captured))
 	runtimeDir := t.TempDir()
 
